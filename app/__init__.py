@@ -1,6 +1,6 @@
 from flask import Flask
 
-from .extensions import init_mongo
+from .extensions import init_extensions
 from .webhook.routes import webhook
 
 
@@ -9,16 +9,8 @@ def create_app():
 
     app = Flask(__name__)
     
-    # Initialize Extensions (MongoDB)
-    mongo=init_mongo(app)
-    # Access or create a database
-    db = mongo.cx["github_database"]
-
-    # Access or create a collection
-    collection = db["github_actions"]   
-    
-    print(f"Database '{db}' and Collection '{collection}' created successfully")
-  
+    app.config["MONGO_URI"] = "mongodb+srv://vaskar:jSksNkXmABog6wkI@cluster0.e2yil.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    init_extensions(app)
     
     # register blueprints webhook
     app.register_blueprint(webhook)

@@ -4,33 +4,61 @@ from ..extensions import mongo
 
 webhook = Blueprint('Webhook', __name__, url_prefix='/webhook')
 
+# events = mongo.db.events
+# print(mongo)
+
+
 @webhook.route('/receiver', methods=["POST"])
 def receiver(): 
-    data = request.json
-    print(data)
-    print(mongo.db)
     
-    if data:
-        # Access the MongoDB collection and insert the event data
-        # events_collection = mongo.db.github_events
-
+    # Collection reference
+    events = mongo.db.events
+    
+    data = request.json
+    event_type = request.headers.get('X-GitHub-Event')
+    
+    # Push event
+    if event_type == 'push':
+        branch = data['ref'].split('/')[-1]
         event = {
-            "request_id": data["commits"][0]["id"],
-            "author_name": data["commits"][0]["author"]["name"],
-            "action": "commit",
-            "from_branch":  data["before"],
-            "to_branch": data["after"],
-            "timestamp": datetime.strptime(data["commits"][0]["timestamp"], "%Y-%m-%dT%H:%M:%S%z")
+            'action': 'push',
+            'author': data['pusher']['name'],
+            'to_branch': branch,
+            'timestamp': datetime.utcnow()
         }
-        
-        print(event)
+        events.insert_one(event)
+        return "Push event received", 200
 
-        # events_collection.insert_one(event)
+    # Pull request event
+    elif event_type == 'pull_request':
+        event = {
+            'action': 'pull_request',
+            'author': data['pull_request']['user']['login'],
+            'from_branch': data['pull_request']['head']['ref'],
+            'to_branch': data['pull_request']['base']['ref'],
+            'timestamp': datetime.utcnow()
+        }
+        events.insert_one(event)
+        return "Pull request event received", 200
 
-        return jsonify({"status": "Webhook data received and stored"}), 200
-    else:
-        return jsonify({"error": "No data received"}), 400
+    # Merge event
+    elif event_type == 'pull_request' and data['action'] == 'closed' and data['pull_request']['merged']:
+        event = {
+            'action': 'merge',
+            'author': data['pull_request']['user']['login'],
+            'from_branch': data['pull_request']['head']['ref'],
+            'to_branch': data['pull_request']['base']['ref'],
+            'timestamp': datetime.utcnow()
+        }
+        events.insert_one(event)
+        return "Merge event received", 200
 
-@webhook.route('/test', methods=["GET"])
-def test():
-    return {"message":"test"}, 200
+    return "Event not handled", 400
+
+@webhook.route("/events", methods=["GET"])
+def get_events():
+    latest_events = list(events.find().sort("timestamp", -1).limit(10))
+    for event in latest_events:
+        event['_id'] = str(event['_id'])  # Convert ObjectId to string
+    return jsonify(latest_events)
+
